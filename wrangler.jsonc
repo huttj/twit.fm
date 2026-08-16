@@ -14,7 +14,7 @@
     { "pattern": "www.twit.fm", "custom_domain": true }
   ],
   "triggers": {
-    "crons": ["*/20 * * * *"]
+    "crons": ["0 */3 * * *"]
   },
   "ai": {
     "binding": "AI"
