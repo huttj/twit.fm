@@ -1,0 +1,45 @@
+{
+  "name": "community-archive-radio",
+  "account_id": "183aa6473d53e6c3f29cfa852ebfb58a",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "public",
+    "binding": "ASSETS"
+  },
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "twit.fm", "custom_domain": true },
+    { "pattern": "www.twit.fm", "custom_domain": true }
+  ],
+  "triggers": {
+    "crons": ["*/20 * * * *"]
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "r2_buckets": [
+    {
+      "binding": "AUDIO",
+      "bucket_name": "community-archive-radio-audio"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "STATION",
+        "class_name": "Station"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Station"]
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
