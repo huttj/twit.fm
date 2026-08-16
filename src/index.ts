@@ -61,6 +61,21 @@ export class Station extends DurableObject {
     return rows[0].audio_key as string;
   }
 
+  // Tweet IDs already featured in recent segments — the dedupe set for the
+  // rolling curation pool.
+  getUsedTweetIds(recentSegments = 400): string[] {
+    const rows = this.sql
+      .exec("SELECT tweets FROM segments ORDER BY id DESC LIMIT ?", recentSegments)
+      .toArray();
+    const ids: string[] = [];
+    for (const row of rows) {
+      try {
+        for (const t of JSON.parse(row.tweets)) ids.push(t.tweet_id);
+      } catch {}
+    }
+    return ids;
+  }
+
   getScripts() {
     return this.sql.exec("SELECT id, script FROM segments").toArray();
   }

@@ -48,8 +48,9 @@ export async function fetchNewTweets(sinceIso: string, untilIso?: string): Promi
   );
   params.append("created_at", `gt.${sinceIso}`);
   if (untilIso) params.append("created_at", `lte.${untilIso}`);
-  params.set("order", "created_at.asc");
-  params.set("limit", "400");
+  // Newest-first so a busy window keeps the freshest 500; re-sorted ascending below.
+  params.set("order", "created_at.desc");
+  params.set("limit", "500");
   const res = await fetch(`${SUPABASE_URL}/rest/v1/enriched_tweets?${params}`, {
     headers: {
       apikey: SUPABASE_ANON_KEY,
@@ -68,9 +69,9 @@ export async function fetchNewTweets(sinceIso: string, untilIso?: string): Promi
   // Keep top-level tweets, plus replies whose parent is in the batch — those are
   // real conversations the producer can cover. Orphan replies lack context; drop them.
   const inBatch = new Set(cleaned.map((t) => t.tweet_id));
-  return cleaned.filter(
-    (t) => !t.reply_to_tweet_id || inBatch.has(t.reply_to_tweet_id)
-  );
+  return cleaned
+    .filter((t) => !t.reply_to_tweet_id || inBatch.has(t.reply_to_tweet_id))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
 interface PlannedSegment {
@@ -136,6 +137,8 @@ async function planSegments(
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     system: `You are the producer of "Community Archive Radio", a station that turns recent tweets from the Community Archive (a public, opt-in tweet archive) into short spoken radio segments.
+
+You receive a large pool of tweets — typically the last day or two, minus anything the station has already covered. Pick only the most interesting material; most of the pool should not make air. When quality is equal, prefer fresher tweets.
 
 From the batch of tweets you receive, pick the most interesting material and group it into 1-${maxSegments} radio segments. Favor tweets with an idea, a joke, a story, or a strong observation. Skip bare links, spam, test posts, and fragments that make no sense without context. It is fine to return fewer segments than the maximum, or an empty list if nothing is airworthy.
 
@@ -276,15 +279,15 @@ export async function runPipeline(
     return { ran: false, segments: 0, reason: `daily cap of ${DAILY_SEGMENT_CAP} reached` };
   }
 
-  const windowed = Boolean(opts.from || opts.to);
-  const cursor =
-    opts.from ??
-    (await station.getMeta("cursor")) ??
-    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-  const tweets = await fetchNewTweets(cursor, opts.to);
+  // Live runs curate from a large rolling pool: the last 48h of tweets (up to
+  // 500), minus everything already featured. Backfill windows are explicit.
+  const from =
+    opts.from ?? new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const fetched = await fetchNewTweets(from, opts.to);
+  const used = new Set<string>(await station.getUsedTweetIds());
+  const tweets = fetched.filter((t) => !used.has(t.tweet_id));
   if (tweets.length < 3) {
-    return { ran: true, segments: 0, reason: `only ${tweets.length} new tweets` };
+    return { ran: true, segments: 0, reason: `only ${tweets.length} uncovered tweets` };
   }
 
   const maxSegments = Math.min(
@@ -347,12 +350,6 @@ export async function runPipeline(
   }
 
   await station.setMeta(dayKey, String(usedToday + built.length));
-
-  // Advance the live cursor only for live runs — backfill windows don't touch it.
-  if (!windowed) {
-    const newest = tweets[tweets.length - 1].created_at;
-    await station.setMeta("cursor", newest);
-  }
 
   return { ran: true, segments: built.length };
 }
