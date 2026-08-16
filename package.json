@@ -9,5 +9,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.123.0"
   }
 }
