@@ -23,6 +23,8 @@ export interface ArchiveTweet {
   created_at: string;
   favorite_count: number;
   retweet_count: number;
+  reply_to_tweet_id: string | null;
+  reply_to_username: string | null;
 }
 
 // Tweet text in the archive carries HTML entities (&amp;, &lt;, …) — decode before
@@ -42,13 +44,12 @@ export async function fetchNewTweets(sinceIso: string, untilIso?: string): Promi
   const params = new URLSearchParams();
   params.set(
     "select",
-    "tweet_id,username,account_display_name,full_text,created_at,favorite_count,retweet_count"
+    "tweet_id,username,account_display_name,full_text,created_at,favorite_count,retweet_count,reply_to_tweet_id,reply_to_username"
   );
-  params.set("reply_to_tweet_id", "is.null");
   params.append("created_at", `gt.${sinceIso}`);
   if (untilIso) params.append("created_at", `lte.${untilIso}`);
   params.set("order", "created_at.asc");
-  params.set("limit", "200");
+  params.set("limit", "400");
   const res = await fetch(`${SUPABASE_URL}/rest/v1/enriched_tweets?${params}`, {
     headers: {
       apikey: SUPABASE_ANON_KEY,
@@ -60,10 +61,16 @@ export async function fetchNewTweets(sinceIso: string, untilIso?: string): Promi
   }
   const rows = (await res.json()) as ArchiveTweet[];
   // Retweets read badly on air; drop them.
-  return rows
+  const cleaned = rows
     .filter((t) => !t.full_text.startsWith("RT @"))
     .filter((t) => !BLOCKED_USERNAMES.has(t.username.toLowerCase()))
     .map((t) => ({ ...t, full_text: decodeEntities(t.full_text) }));
+  // Keep top-level tweets, plus replies whose parent is in the batch — those are
+  // real conversations the producer can cover. Orphan replies lack context; drop them.
+  const inBatch = new Set(cleaned.map((t) => t.tweet_id));
+  return cleaned.filter(
+    (t) => !t.reply_to_tweet_id || inBatch.has(t.reply_to_tweet_id)
+  );
 }
 
 interface PlannedSegment {
@@ -115,10 +122,12 @@ async function planSegments(
   maxSegments: number
 ): Promise<PlannedSegment[]> {
   const tweetLines = tweets
-    .map(
-      (t) =>
-        `[${t.tweet_id}] @${t.username} (${t.account_display_name}) at ${t.created_at} | ♥${t.favorite_count} ↻${t.retweet_count}\n${t.full_text}`
-    )
+    .map((t) => {
+      const replyTag = t.reply_to_tweet_id
+        ? ` — REPLY to [${t.reply_to_tweet_id}] by @${t.reply_to_username}`
+        : "";
+      return `[${t.tweet_id}] @${t.username} (${t.account_display_name})${replyTag} at ${t.created_at} | ♥${t.favorite_count} ↻${t.retweet_count}\n${t.full_text}`;
+    })
     .join("\n---\n");
 
   const response = await client.beta.messages.create({
@@ -128,7 +137,12 @@ async function planSegments(
     fallbacks: "default",
     system: `You are the producer of "Community Archive Radio", a station that turns recent tweets from the Community Archive (a public, opt-in tweet archive) into short spoken radio segments.
 
-From the batch of tweets you receive, pick the most interesting material and group it into 1-${maxSegments} radio segments. A segment can be one great standalone tweet, or several tweets that rhyme thematically. Favor tweets with an idea, a joke, a story, or a strong observation. Skip bare links, spam, test posts, and fragments that make no sense without context. It is fine to return fewer segments than the maximum, or an empty list if nothing is airworthy.
+From the batch of tweets you receive, pick the most interesting material and group it into 1-${maxSegments} radio segments. Favor tweets with an idea, a joke, a story, or a strong observation. Skip bare links, spam, test posts, and fragments that make no sense without context. It is fine to return fewer segments than the maximum, or an empty list if nothing is airworthy.
+
+Grouping rules — these are strict:
+- Only group tweets that are clearly connected: the same topic, the same conversation, or an unmistakable shared thread. A listener should never wonder why two tweets share a segment.
+- A single great tweet is a perfectly good segment on its own. Never bolt an unrelated tweet onto a segment to fill it out.
+- Some tweets are marked as REPLIES with their parent in the batch. A real back-and-forth between archive members is prime material — make it its own segment and have the writer cover it as a conversation, in order.
 
 Each segment gets a short punchy headline, an "angle" note telling the segment writer how to frame it, and "delivery_notes" — you are the interpreter. Tweets are often jokes, irony, or shitposts; never assume sincerity. In delivery_notes, tell the writer exactly how each tweet should be read: flag jokes and explain the premise and punchline (e.g. "the 2028 washing-machine tweet is absurdist sci-fi humor about the future, not something that happened"), decode emoticons and emoji (e.g. "OwO / TwT / ^w^ are cutesy anime emoticons — the joke is assigning personalities to AI models"), give a pronounceable form for names containing emoji or symbols, and call out anything that would sound wrong if read literally.
 
@@ -162,7 +176,12 @@ async function writeScript(
 ): Promise<string> {
   const featured = tweets.filter((t) => segment.tweet_ids.includes(t.tweet_id));
   const tweetLines = featured
-    .map((t) => `@${t.username} (display name: ${t.account_display_name}):\n${t.full_text}`)
+    .map(
+      (t) =>
+        `@${t.username} (display name: ${t.account_display_name})${
+          t.reply_to_username ? ` — replying to @${t.reply_to_username}` : ""
+        }:\n${t.full_text}`
+    )
     .join("\n---\n");
 
   const response = await client.beta.messages.create({
