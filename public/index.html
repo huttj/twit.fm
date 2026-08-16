@@ -197,6 +197,7 @@
       <button class="play" id="play" title="Play / Pause">▶</button>
       <button class="skip" id="skip" title="Next segment">⏭ skip</button>
       <button class="skip" id="speed" title="Playback speed">1×</button>
+      <button class="skip" id="share" title="Copy link to this segment">⧉ copy link</button>
       <button class="toggle-tweets" id="toggle-tweets">show tweets</button>
       <span class="queue-note" id="queue-note"></span>
     </div>
@@ -229,6 +230,7 @@
     play: document.getElementById("play"),
     skip: document.getElementById("skip"),
     speed: document.getElementById("speed"),
+    share: document.getElementById("share"),
     toggleTweets: document.getElementById("toggle-tweets"),
     queueNote: document.getElementById("queue-note"),
     history: document.getElementById("history"),
@@ -254,6 +256,12 @@
       segments = data.segments;
       // Session queue: unheard segments, newest first (start at now, drift back in time).
       queue = segments.filter((s) => !heard.has(s.id)).map((s) => s.id);
+      // Deep link: /#s=<id> cues that segment, ready to play.
+      const m = location.hash.match(/s=(\d+)/);
+      if (m) {
+        const linked = byId(parseInt(m[1], 10));
+        if (linked) { current = linked; audio.src = linked.audio_url; }
+      }
     } else if (fresh.length) {
       // Breaking news: new segments jump the queue.
       segments = data.segments;
@@ -308,6 +316,18 @@
   // playbackRate resets when a new source loads — reapply every time.
   audio.addEventListener("loadedmetadata", applySpeed);
   applySpeed();
+
+  els.share.addEventListener("click", async () => {
+    if (!current) return;
+    const link = location.origin + "/#s=" + current.id;
+    try {
+      await navigator.clipboard.writeText(link);
+      els.share.textContent = "copied ✓";
+    } catch {
+      els.share.textContent = link; // last resort: show it
+    }
+    setTimeout(() => { els.share.textContent = "⧉ copy link"; }, 1500);
+  });
   els.toggleTweets.addEventListener("click", () => {
     const show = els.tweets.classList.toggle("show");
     els.toggleTweets.textContent = show ? "hide tweets" : "show tweets";
