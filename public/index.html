@@ -55,6 +55,7 @@
     margin-top: 0.3rem;
   }
   .deck {
+    position: relative;
     background: var(--panel);
     border: 1px solid #35302a;
     border-radius: 14px;
@@ -130,6 +131,18 @@
     font-size: 0.85rem;
   }
   .queue-note { color: var(--dim); font-size: 0.8rem; margin-left: auto; text-align: right; }
+  .corner-copy {
+    position: absolute;
+    bottom: 8px;
+    right: 10px;
+    background: none;
+    border: none;
+    color: #5c5344;
+    font-size: 0.95rem;
+    cursor: pointer;
+    padding: 4px 6px;
+  }
+  .corner-copy:hover { color: var(--accent2); }
   h2.section {
     margin: 2rem 0 0.75rem;
     font-size: 0.8rem;
@@ -197,10 +210,10 @@
       <button class="play" id="play" title="Play / Pause">▶</button>
       <button class="skip" id="skip" title="Next segment">⏭ skip</button>
       <button class="skip" id="speed" title="Playback speed">1×</button>
-      <button class="skip" id="share" title="Copy link to this segment">⧉ copy link</button>
       <button class="toggle-tweets" id="toggle-tweets">show tweets</button>
       <span class="queue-note" id="queue-note"></span>
     </div>
+    <button id="share" class="corner-copy" title="Copy link to this segment">⧉</button>
   </div>
 
   <h2 class="section">Broadcast log</h2>
@@ -322,11 +335,11 @@
     const link = location.origin + "/#s=" + current.id;
     try {
       await navigator.clipboard.writeText(link);
-      els.share.textContent = "copied ✓";
+      els.share.textContent = "✓";
     } catch {
-      els.share.textContent = link; // last resort: show it
+      prompt("Copy link:", link); // clipboard blocked — show it instead
     }
-    setTimeout(() => { els.share.textContent = "⧉ copy link"; }, 1500);
+    setTimeout(() => { els.share.textContent = "⧉"; }, 1200);
   });
   els.toggleTweets.addEventListener("click", () => {
     const show = els.tweets.classList.toggle("show");
