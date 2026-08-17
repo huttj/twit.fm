@@ -14,7 +14,8 @@
     { "pattern": "www.twit.fm", "custom_domain": true }
   ],
   "triggers": {
-    "crons": ["0 */3 * * *"]
+    // Scheduler disabled — re-add e.g. "0 */3 * * *" to resume auto-generation.
+    "crons": []
   },
   "ai": {
     "binding": "AI"
